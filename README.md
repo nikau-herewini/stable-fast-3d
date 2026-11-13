@@ -35,15 +35,11 @@ on rebuild; pin an image `@sha256:<digest>` for immutable deployment. There is n
 `latest` alias. CI publishes only on pushes to `main`, after tests and per-backend
 weight-free image smoke checks; pull requests do not publish.
 
-**Publication awaits merge; image availability has not been verified.** After
-the first publish, the repository owner must change the GHCR package from its
-default private visibility to **Public** in package Settings. This change is
-irreversible and cannot be automated through the supported REST API. Public
-images need no registry login. Model weights and Hugging Face tokens remain
-external and are supplied at runtime.
+Public images need no registry login. Model weights and Hugging Face tokens
+remain external and are supplied at runtime.
 
 See the [API and Docker deployment guide](docs/api.md) for `docker pull`/`run`
-commands, visibility setup, request limits, and optional source builds. Prior CI
+commands, request limits, and optional source builds. Prior CI
 validated the CPU image; the new GPU build matrix does not verify inference on
 GPU hardware. Full model inference remains unverified.
 

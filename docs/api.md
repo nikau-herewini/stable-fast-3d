@@ -7,9 +7,7 @@ request timeouts, and access controls before any wider deployment.
 
 ## Published images
 
-The publication workflow is configured for
-`ghcr.io/nikau-herewini/stable-fast-3d`. **Publishing does not run until this
-change merges to `main`; image availability has not been verified.**
+The publication workflow targets `ghcr.io/nikau-herewini/stable-fast-3d`.
 
 CI publishes only on pushes to `main`, after tests and weight-free image smoke
 checks for each backend pass. Pull requests do not publish images. Images target
@@ -29,18 +27,8 @@ digest: `ghcr.io/nikau-herewini/stable-fast-3d@sha256:<digest>`.
 Moving tags follow successful `main` publications. Neither model weights nor
 tokens are included in images.
 
-### One-time public visibility setup (repository owner)
-
-GHCR creates new packages as **private by default**. After the first successful
-publish, the repository owner must open the `stable-fast-3d` package on GitHub,
-then select **Settings → Change visibility → Public**. Making the package public
-is **irreversible**. The supported GitHub REST API does not provide a package
-visibility change operation, so the workflow cannot automate this step.
-
-Once the package is public, Docker pulls need **no registry authentication**.
-Before that step, anonymous pulls fail; this is separate from the Hugging Face
-access token needed at runtime. The commands below assume publication and this
-visibility step have completed.
+Public images need no registry authentication. The Hugging Face access token
+is separate and is supplied at runtime.
 
 ## CPU quick start
 
