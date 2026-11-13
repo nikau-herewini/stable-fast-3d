@@ -1,0 +1,27 @@
+# Allow only the API source, native build inputs, and tetrahedral grid.
+# In particular, do not send credentials, caches, uploads, or .git to the builder.
+**
+!Dockerfile
+!.dockerignore
+!requirements-inference.txt
+!requirements-api.txt
+!api_server.py
+!api_backend.py
+!LICENSE.md
+!sf3d/
+!sf3d/**
+!texture_baker/
+!texture_baker/**
+!uv_unwrapper/
+!uv_unwrapper/**
+!load/
+!load/tets/
+!load/tets/*.npz
+
+**/__pycache__/
+**/*.pyc
+**/*.so
+**/*.dylib
+**/build/
+**/dist/
+**/*.egg-info/

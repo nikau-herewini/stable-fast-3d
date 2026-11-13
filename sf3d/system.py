@@ -1,5 +1,4 @@
 import os
-from contextlib import nullcontext
 from dataclasses import dataclass, field
 from typing import Any, List, Literal, Optional, Tuple, Union
 
@@ -27,7 +26,7 @@ from sf3d.models.utils import (
     normalize,
     scale_tensor,
 )
-from sf3d.utils import create_intrinsic_from_fov_deg, default_cond_c2w, get_device
+from sf3d.utils import create_intrinsic_from_fov_deg, default_cond_c2w
 
 try:
     from texture_baker import TextureBaker
@@ -338,11 +337,10 @@ class SF3D(BaseModule):
         if self.global_estimator is not None and estimate_illumination:
             global_dict.update(self.global_estimator(non_postprocessed_codes))
 
-        device = get_device()
         with torch.no_grad():
-            with torch.autocast(
-                device_type=device, enabled=False
-            ) if "cuda" in device else nullcontext():
+            # Geometry and native operators require float32 on every backend.
+            # Use the actual model device, not global hardware availability.
+            with torch.autocast(device_type=self.device.type, enabled=False):
                 meshes = self.triplane_to_meshes(scene_codes)
 
                 rets = []

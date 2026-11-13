@@ -1,0 +1,15 @@
+# API runtime: keep the upstream versions, but background removal always uses CPU.
+# Install the backend-specific torch/torchvision pair first. Build the two local
+# extensions separately with --no-build-isolation and USE_CUDA=0 USE_METAL=0.
+einops==0.7.0
+jaxtyping==0.2.31
+omegaconf==2.3.0
+transformers==4.42.3
+open_clip_torch==2.24.0
+trimesh==4.4.1
+numpy==1.26.4
+huggingface-hub==0.23.4
+rembg==2.0.57
+onnxruntime==1.20.1
+pynanoinstantmeshes==0.0.3
+gpytoolbox==0.2.0

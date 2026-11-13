@@ -80,7 +80,7 @@ class MarchingTetrahedraHelper(IsosurfaceHelper):
             "indices", torch.from_numpy(tets["indices"]).long(), persistent=False
         )
 
-        self._all_edges: Optional[Integer[Tensor, "Ne 2"]] = None
+        self.register_buffer("_all_edges", None, persistent=False)
 
         center_indices, boundary_indices = self.get_center_boundary_index(
             self._grid_vertices

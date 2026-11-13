@@ -1,130 +1,78 @@
 import glob
 import os
 import platform
+from pathlib import Path
 
 import torch
 from setuptools import find_packages, setup
 from torch.utils.cpp_extension import (
     CUDA_HOME,
+    IS_HIP_EXTENSION,
     BuildExtension,
     CppExtension,
     CUDAExtension,
 )
 
 library_name = "texture_baker"
+root = Path(__file__).resolve().parent
 
 
 def get_extensions():
     debug_mode = os.getenv("DEBUG", "0") == "1"
-    use_cuda = os.getenv("USE_CUDA", "1" if torch.cuda.is_available() else "0") == "1"
-    use_metal = (
-        os.getenv("USE_METAL", "1" if torch.backends.mps.is_available() else "0") == "1"
-    )
-    use_native_arch = os.getenv("USE_NATIVE_ARCH", "1") == "1"
+    # Image builds do not need a GPU. CUDAExtension also handles ROCm/HIP,
+    # including its libraries; CUDA_HOME alone incorrectly excludes ROCm.
+    has_toolkit = CUDA_HOME is not None or IS_HIP_EXTENSION
+    use_cuda = os.getenv("USE_CUDA", "1" if has_toolkit else "0") == "1"
+    if use_cuda and not has_toolkit:
+        raise RuntimeError("USE_CUDA=1 requires a CUDA or ROCm PyTorch build and toolkit")
+    use_metal = os.getenv("USE_METAL", "1" if torch.backends.mps.is_available() else "0") == "1"
+    use_native_arch = os.getenv("USE_NATIVE_ARCH", "0") == "1"
+    cxx_args = ["-O0" if debug_mode else "-O3", "-fdiagnostics-color=always", "-fopenmp"]
+    if use_native_arch:
+        cxx_args.append("-march=native")
+    compile_args = {"cxx": cxx_args}
+    link_args = ["-fopenmp"]
     if debug_mode:
-        print("Compiling in debug mode")
-
-    use_cuda = use_cuda and CUDA_HOME is not None
-    extension = CUDAExtension if use_cuda else CppExtension
-
-    is_hip_extension = True if ((os.environ.get('ROCM_HOME') is not None) and (torch.version.hip is not None)) else False
-
-    extra_link_args = []
-    extra_compile_args = {
-        "cxx": [
-            "-O3" if not debug_mode else "-O0",
-            "-fdiagnostics-color=always",
-            "-fopenmp",
-        ]
-        + ["-march=native"]
-        if use_native_arch
-        else [],
-        "nvcc": [
-            "-O3" if not debug_mode else "-O0",
-        ],
-    }
-    if debug_mode:
-        extra_compile_args["cxx"].append("-g")
+        cxx_args += ["-g", "-UNDEBUG"]
+        link_args += ["-O0", "-g"]
         if platform.system() == "Windows":
-            extra_compile_args["cxx"].append("/Z7")
-            extra_compile_args["cxx"].append("/Od")
-            extra_link_args.extend(["/DEBUG"])
-        extra_compile_args["cxx"].append("-UNDEBUG")
-        extra_compile_args["nvcc"].append("-UNDEBUG")
-        extra_compile_args["nvcc"].append("-g")
-        extra_link_args.extend(["-O0", "-g"])
+            cxx_args += ["/Z7", "/Od"]
+            link_args.append("/DEBUG")
 
-    define_macros = []
-    extensions = []
-    libraries = []
-
-    this_dir = os.path.dirname(os.path.curdir)
-    sources = glob.glob(
-        os.path.join(this_dir, library_name, "csrc", "**", "*.cpp"), recursive=True
-    )
-
-    if len(sources) == 0:
-        print("No source files found for extension, skipping extension compilation")
-        return None
-
+    sources = glob.glob(str(root / library_name / "csrc" / "*.cpp"))
+    macros = []
     if use_cuda:
-        define_macros += [
-            ("THRUST_IGNORE_CUB_VERSION_CHECK", None),
-        ]
-        sources += glob.glob(
-            os.path.join(this_dir, library_name, "csrc", "**", "*.cu"), recursive=True
-        )
-
-        if not is_hip_extension:
-            libraries += ["cudart", "c10_cuda"]
-
+        sources += glob.glob(str(root / library_name / "csrc" / "*.cu"))
+        compile_args["nvcc"] = ["-O0", "-g", "-UNDEBUG"] if debug_mode else ["-O3"]
+        macros.append(("THRUST_IGNORE_CUB_VERSION_CHECK", None))
     if use_metal:
-        define_macros += [
-            ("WITH_MPS", None),
-        ]
-        sources += glob.glob(
-            os.path.join(this_dir, library_name, "csrc", "**", "*.mm"), recursive=True
-        )
-        extra_compile_args.update({"cxx": ["-O3", "-arch", "arm64", "-mmacosx-version-min=10.15"]})
-        extra_link_args += ["-arch", "arm64"]
+        # Keep the upstream Metal build path; the API does not select MPS.
+        sources += glob.glob(str(root / library_name / "csrc" / "*.mm"))
+        macros.append(("WITH_MPS", None))
+        compile_args["cxx"] = ["-O3", "-arch", "arm64", "-mmacosx-version-min=10.15"]
+        link_args = ["-arch", "arm64"]
 
-    extensions.append(
-        extension(
-            name=f"{library_name}._C",
-            sources=sources,
-            define_macros=define_macros,
-            extra_compile_args=extra_compile_args,
-            extra_link_args=extra_link_args,
-            libraries=libraries
-            + [
-                "c10",
-                "torch",
-                "torch_cpu",
-                "torch_python",
-            ],
-        )
-    )
-
-    for ext in extensions:
-        ext.libraries = ["cudart_static" if x == "cudart" else x for x in ext.libraries]
-
-    print(extensions)
-
-    return extensions
+    extension = CUDAExtension if use_cuda else CppExtension
+    return [extension(
+        name=f"{library_name}._C",
+        sources=sources,
+        define_macros=macros,
+        extra_compile_args=compile_args,
+        extra_link_args=link_args,
+    )]
 
 
 setup(
     name=library_name,
     version="0.0.1",
-    packages=find_packages(where="."),
-    package_dir={"": "."},
+    packages=find_packages(),
     ext_modules=get_extensions(),
     install_requires=[],
     package_data={
         library_name: [os.path.join("csrc", "*.h"), os.path.join("csrc", "*.metal")],
     },
     description="Small texture baker which rasterizes barycentric coordinates to a tensor.",
-    long_description=open("README.md").read(),
+    long_description=(root / "README.md").read_text(),
     long_description_content_type="text/markdown",
     url="https://github.com/Stability-AI/texture_baker",
     cmdclass={"build_ext": BuildExtension},

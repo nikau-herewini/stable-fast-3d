@@ -1,0 +1,26 @@
+services:
+  api:
+    image: stable-fast-3d-api:local
+    build:
+      context: .
+      target: ${SF3D_BUILD_TARGET:-cpu}
+      args:
+        BACKEND: ${SF3D_BACKEND:-cpu}
+        BASE_IMAGE: ${SF3D_BASE_IMAGE:-python:3.11.11-slim-bookworm@sha256:081075da77b2b55c23c088251026fb69a7b2bf92471e491ff5fd75c192fd38e5}
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${SF3D_PORT:-8000}:8000"
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+      HF_HOME: /cache/huggingface
+      U2NET_HOME: /cache/u2net
+      SF3D_DEVICE: ${SF3D_DEVICE:-auto}
+      SF3D_USE_CPU: ${SF3D_USE_CPU:-0}
+    volumes:
+      - model-cache:/cache
+    stop_grace_period: 2m
+
+volumes:
+  model-cache:
+    name: sf3d-model-cache

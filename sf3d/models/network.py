@@ -7,23 +7,9 @@ import torch.nn.functional as F
 from einops import rearrange
 from jaxtyping import Float
 from torch import Tensor
-from torch.amp import custom_bwd, custom_fwd
 from torch.autograd import Function
 
 from sf3d.models.utils import BaseModule, normalize
-from sf3d.utils import get_device
-
-
-def conditional_decorator(decorator_with_args, condition, *args, **kwargs):
-    def wrapper(fn):
-        if condition:
-            if len(kwargs) == 0:
-                return decorator_with_args
-            return decorator_with_args(*args, **kwargs)(fn)
-        else:
-            return fn
-
-    return wrapper
 
 
 class PixelShuffleUpsampleNetwork(BaseModule):
@@ -78,18 +64,15 @@ class _TruncExp(Function):  # pylint: disable=abstract-method
     # Implementation from torch-ngp:
     # https://github.com/ashawkey/torch-ngp/blob/93b08a0d4ec1cc6e69d85df7f0acdfb99603b628/activation.py
     @staticmethod
-    @conditional_decorator(
-        custom_fwd,
-        "cuda" in get_device(),
-        cast_inputs=torch.float32,
-        device_type="cuda",
-    )
     def forward(ctx, x):  # pylint: disable=arguments-differ
+        # Promote low precision on the input's device, without import-time
+        # selection or CUDA-specific AMP decorators.
+        if x.dtype in (torch.float16, torch.bfloat16):
+            x = x.float()
         ctx.save_for_backward(x)
         return torch.exp(x)
 
     @staticmethod
-    @conditional_decorator(custom_bwd, "cuda" in get_device())
     def backward(ctx, g):  # pylint: disable=arguments-differ
         x = ctx.saved_tensors[0]
         return g * torch.exp(torch.clamp(x, max=15))

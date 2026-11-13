@@ -22,6 +22,15 @@ This is the official codebase for **Stable Fast 3D**, a state-of-the-art open-so
 
 Stable Fast 3D is based on [TripoSR](https://github.com/VAST-AI-Research/TripoSR) but introduces several new key techniques. For one, we explicitly optimize our model to produce good meshes without artifacts alongside textures with UV unwrapping. We also delight the color and predict material parameters so the assets can be easily integrated into a game. We achieve all of this while still maintaining the fast inference speeds of TripoSR.
 
+## Image-to-GLB API
+
+This fork provides a private-network HTTP server: upload one image to
+`POST /generate` and download the resulting GLB file. See the
+[API and Docker deployment guide](docs/api.md) for CPU, NVIDIA CUDA, and AMD ROCm
+configurations, request limits, and validation limitations.
+
+The CLI and optional Gradio app remain available.
+
 ## Getting Started
 
 ### Installation

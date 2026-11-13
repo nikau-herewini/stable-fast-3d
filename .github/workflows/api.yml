@@ -1,0 +1,52 @@
+name: API
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            requirements-api.txt
+            requirements-test.txt
+      - run: python -m pip install -r requirements-test.txt
+      - run: python -m pytest -q
+      - run: ruff check api_server.py api_backend.py tests
+      - run: python -m compileall -q api_server.py api_backend.py sf3d texture_baker uv_unwrapper
+
+  docker-cpu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: cpu
+          push: false
+          load: true
+          tags: sf3d-api:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Check image imports and CPU texture baking
+        run: |
+          docker run --rm --entrypoint python sf3d-api:test -c '
+          import api_server
+          import torch
+          from sf3d.system import SF3D
+          from texture_baker import TextureBaker
+          baker = TextureBaker()
+          uv = torch.tensor([[0., 0.], [1., 0.], [0., 1.]])
+          faces = torch.tensor([[0, 1, 2]])
+          rast = baker.rasterize(uv, faces, 4)
+          assert rast.shape == (4, 4, 4)
+          assert baker.interpolate(torch.ones((3, 3)), rast, faces).shape == (4, 4, 3)
+          '
