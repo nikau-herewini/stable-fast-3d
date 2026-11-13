@@ -52,7 +52,7 @@ RUN python -m pip install --index-url "${TORCH_INDEX_URL}" \
 
 FROM ${BACKEND}-torch AS api
 WORKDIR /opt/sf3d
-COPY requirements-inference.txt requirements-api.txt ./
+COPY requirements.txt requirements-api.txt ./
 COPY texture_baker/ ./texture_baker/
 COPY uv_unwrapper/ ./uv_unwrapper/
 
@@ -61,7 +61,7 @@ COPY uv_unwrapper/ ./uv_unwrapper/
 # Install runtime dependencies before compiling either local extension.
 RUN python -m pip freeze > /tmp/backend-constraints.txt \
     && python -m pip install -c /tmp/backend-constraints.txt \
-        -r requirements-inference.txt -r requirements-api.txt \
+        -r requirements.txt -r requirements-api.txt \
     && python -m pip install --no-build-isolation \
         -c /tmp/backend-constraints.txt ./texture_baker/ ./uv_unwrapper/ \
     && python -m pip check \
