@@ -1,13 +1,13 @@
 # Image-to-GLB API deployment
 
 This service accepts 1 image and returns 1 GLB. It has **no authentication**.
-Keep it on a trusted private network. Compose publishes only to `127.0.0.1`.
+Keep it on a trusted private network. The examples bind only to `127.0.0.1`.
 Do not expose port 8000 directly to the internet. Add an authenticated proxy,
 request timeouts, and access controls before any wider deployment.
 
 ## CPU quick start
 
-Requirements: Docker with BuildKit, Docker Compose v2, internet access, and
+Requirements: Docker with BuildKit, internet access, and
 sufficient disk space and RAM for PyTorch, compilation, and model weights.
 The intended container platform is Linux x86-64. Builds can use substantial RAM;
 `MAX_JOBS=2` limits concurrent native compiler jobs. CPU inference can be slow.
@@ -21,8 +21,12 @@ The intended container platform is Linux x86-64. Builds can use substantial RAM;
 # Bash: read without echoing the token or storing it in shell history.
 read -rs -p 'Hugging Face token: ' HF_TOKEN; echo
 export HF_TOKEN
-docker compose up --build -d
-docker compose logs -f api
+docker build --target cpu -t stable-fast-3d-api:cpu .
+docker run -d --name sf3d-api --init --restart unless-stopped \
+  --stop-timeout 120 -p 127.0.0.1:8000:8000 \
+  -e HF_TOKEN -e SF3D_DEVICE=cpu \
+  -v sf3d-model-cache:/cache stable-fast-3d-api:cpu
+docker logs -f sf3d-api
 ```
 
 The server loads its model and background-removal session at startup. Initial
@@ -80,12 +84,13 @@ and memory allocation.
 The image runs as UID/GID **10001:10001**. The named volume
 `sf3d-model-cache` persists both `HF_HOME=/cache/huggingface` and
 `U2NET_HOME=/cache/u2net`. Recreating the container preserves these downloads.
-Do not use `docker compose down -v` unless you intend to delete the cache.
+Removing the container does not remove this volume. Delete `sf3d-model-cache`
+only when you intend to discard the cached models.
 For bind mounts, create the directory and grant UID 10001 write access first;
 an empty root-owned bind mount does not inherit the image's cache ownership.
 
 The image healthcheck calls `/readyz` every 30 seconds, with a 10-minute startup
-allowance. Increase `start_period` in a Compose override for slow downloads.
+allowance. Use `docker run --health-start-period=20m` for slower downloads.
 Docker marks failed checks unhealthy; it does not automatically restart a
 container merely because it is unhealthy. Inspect the logs for startup failures.
 
@@ -155,8 +160,9 @@ backend absent from the installed PyTorch build.
 
 **Docker builds and GPU/model inference were not executed locally.** Local API
 tests passed using a temporary Python environment; Docker and a C++ compiler
-were unavailable locally. CI is configured to build the CPU image and run its
-weight-free import/baker smoke check. These are deployment configurations, not
+were unavailable locally. The CPU image build and weight-free startup, UV
+unwrapping, and texture-baker checks passed in CI. GPU configurations remain
+untested. These are deployment configurations, not
 claims of support for arbitrary NVIDIA or AMD GPUs. Check the selected
 PyTorch release's hardware and driver requirements. CPU baking also adds data
 transfers and CPU work to accelerator inference.
@@ -227,12 +233,6 @@ docker run --rm --init -p 127.0.0.1:8000:8000 \
 
 Adjust the render-node path and supplementary group IDs to the selected host
 GPU. Do not solve permissions by running the application privileged or as root.
-
-For Compose GPU deployments, set `SF3D_BACKEND`, `SF3D_BUILD_TARGET=api`,
-`SF3D_DEVICE`, and optionally `SF3D_BASE_IMAGE`. Add a Compose override with the
-same GPU device reservations/device mappings and numeric supplementary groups
-as the corresponding `docker run` example. The supplied Compose file is
-intentionally CPU-only and grants no GPU device access.
 
 The API deployment scope is **CPU, NVIDIA CUDA, and AMD ROCm only**. Existing
 Mac source is retained, but MPS is outside the API support scope.
