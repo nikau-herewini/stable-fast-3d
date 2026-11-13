@@ -42,7 +42,9 @@ jobs:
           import api_server
           import torch
           from sf3d.system import SF3D
+          from sf3d.device import select_device
           from texture_baker import TextureBaker
+          assert select_device("cpu") == "cpu"
           baker = TextureBaker()
           uv = torch.tensor([[0., 0.], [1., 0.], [0., 1.]])
           faces = torch.tensor([[0, 1, 2]])
