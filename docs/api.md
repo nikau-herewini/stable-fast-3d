@@ -5,12 +5,48 @@ Keep it on a trusted private network. The examples bind only to `127.0.0.1`.
 Do not expose port 8000 directly to the internet. Add an authenticated proxy,
 request timeouts, and access controls before any wider deployment.
 
+## Published images
+
+The publication workflow is configured for
+`ghcr.io/nikau-herewini/stable-fast-3d`. **Publishing does not run until this
+change merges to `main`; image availability has not been verified.**
+
+CI publishes only on pushes to `main`, after tests and weight-free image smoke
+checks for each backend pass. Pull requests do not publish images. Images target
+**Linux amd64 only**. There is no `latest` alias.
+
+| Backend | Moving tag | Commit-specific tag format |
+| --- | --- | --- |
+| CPU | `cpu` | `sha-<full40commit>-cpu` |
+| NVIDIA CUDA | `cuda` | `sha-<full40commit>-cuda` |
+| AMD ROCm | `rocm` | `sha-<full40commit>-rocm` |
+
+Use the full 40-character commit SHA in commit-specific tags, for example
+`ghcr.io/nikau-herewini/stable-fast-3d:sha-<full40commit>-cpu`.
+These tags are not strictly immutable: reruns can rebuild with changed apt or
+transitive dependencies. For immutable deployment, use the published image
+digest: `ghcr.io/nikau-herewini/stable-fast-3d@sha256:<digest>`.
+Moving tags follow successful `main` publications. Neither model weights nor
+tokens are included in images.
+
+### One-time public visibility setup (repository owner)
+
+GHCR creates new packages as **private by default**. After the first successful
+publish, the repository owner must open the `stable-fast-3d` package on GitHub,
+then select **Settings → Change visibility → Public**. Making the package public
+is **irreversible**. The supported GitHub REST API does not provide a package
+visibility change operation, so the workflow cannot automate this step.
+
+Once the package is public, Docker pulls need **no registry authentication**.
+Before that step, anonymous pulls fail; this is separate from the Hugging Face
+access token needed at runtime. The commands below assume publication and this
+visibility step have completed.
+
 ## CPU quick start
 
-Requirements: Docker with BuildKit, internet access, and
-sufficient disk space and RAM for PyTorch, compilation, and model weights.
-The intended container platform is Linux x86-64. Builds can use substantial RAM;
-`MAX_JOBS=2` limits concurrent native compiler jobs. CPU inference can be slow.
+Requirements: Docker, internet access, and sufficient disk space and RAM for
+PyTorch and model weights. CPU inference can be slow. No local compiler or
+image build is needed when using a published image.
 
 1. Accept the model license and request access at
    <https://huggingface.co/stabilityai/stable-fast-3d>.
@@ -21,11 +57,11 @@ The intended container platform is Linux x86-64. Builds can use substantial RAM;
 # Bash: read without echoing the token or storing it in shell history.
 read -rs -p 'Hugging Face token: ' HF_TOKEN; echo
 export HF_TOKEN
-docker build --target cpu -t stable-fast-3d-api:cpu .
+docker pull ghcr.io/nikau-herewini/stable-fast-3d:cpu
 docker run -d --name sf3d-api --init --restart unless-stopped \
   --stop-timeout 120 -p 127.0.0.1:8000:8000 \
   -e HF_TOKEN -e SF3D_DEVICE=cpu \
-  -v sf3d-model-cache:/cache stable-fast-3d-api:cpu
+  -v sf3d-model-cache:/cache ghcr.io/nikau-herewini/stable-fast-3d:cpu
 docker logs -f sf3d-api
 ```
 
@@ -94,12 +130,21 @@ allowance. Use `docker run --health-start-period=20m` for slower downloads.
 Docker marks failed checks unhealthy; it does not automatically restart a
 container merely because it is unhealthy. Inspect the logs for startup failures.
 
-## Builds and dependency ordering
+## Advanced: optional source builds and dependency ordering
+
+Published images are the default deployment path. To build locally instead,
+use Docker with BuildKit from the repository checkout. Builds need substantial
+disk space and RAM; `MAX_JOBS=2` limits concurrent native compiler jobs.
 
 ```sh
 docker build --target cpu -t stable-fast-3d-api:cpu .
+docker build --target api --build-arg BACKEND=cuda -t stable-fast-3d-api:cuda .
+docker build --target api --build-arg BACKEND=rocm -t stable-fast-3d-api:rocm .
 # A plain `docker build .` also selects the CPU configuration.
 ```
+
+For locally built images, replace the GHCR image reference in the run commands
+with the corresponding `stable-fast-3d-api:<backend>` tag.
 
 The Python base is pinned by version and digest. The backend torch stages pin
 PyTorch and torchvision; the dependency files pin the application's direct
@@ -156,16 +201,20 @@ An explicit `SF3D_DEVICE=cuda` wins over the legacy flag. Prefer
 `SF3D_DEVICE=cpu` for a clear CPU configuration. Neither variable can add a
 backend absent from the installed PyTorch build.
 
-## GPU image configurations — untested
+## GPU deployment and validation limits
 
-**Docker builds and GPU/model inference were not executed locally.** Local API
-tests passed using a temporary Python environment; Docker and a C++ compiler
-were unavailable locally. The CPU image build and weight-free startup, UV
-unwrapping, and texture-baker checks passed in CI. GPU configurations remain
-untested. These are deployment configurations, not
-claims of support for arbitrary NVIDIA or AMD GPUs. Check the selected
-PyTorch release's hardware and driver requirements. CPU baking also adds data
-transfers and CPU work to accelerator inference.
+The CPU image build and weight-free startup, UV unwrapping, and texture-baker
+checks passed in prior CI. The new `docker` matrix builds `cpu`, `cuda`, and
+`rocm` images and runs weight-free smoke checks. Every backend also runs
+`select_device("cpu")` in the Dockerfile build-time check. The matrix
+configuration is not evidence that those new builds have passed. **GPU hardware inference and full model inference
+remain unverified.** No local Docker build or GPU inference was run for these
+documentation changes.
+
+These are deployment configurations, not claims of support for arbitrary NVIDIA
+or AMD GPUs. Check the selected PyTorch release's hardware and driver
+requirements. CPU baking adds data transfers and CPU work to accelerator
+inference.
 
 The final `api` stage selects a named torch base stage using `BACKEND`:
 
@@ -202,33 +251,31 @@ Install a host NVIDIA driver compatible with CUDA 12.4 and NVIDIA Container
 Toolkit. Select a GPU supported by this PyTorch CUDA build.
 
 ```sh
-docker build --target api --build-arg BACKEND=cuda \
-  -t stable-fast-3d-api:cuda .
+docker pull ghcr.io/nikau-herewini/stable-fast-3d:cuda
 docker run --rm --init --gpus all -p 127.0.0.1:8000:8000 \
   -e HF_TOKEN -e SF3D_DEVICE=cuda \
-  -v sf3d-model-cache:/cache stable-fast-3d-api:cuda
+  -v sf3d-model-cache:/cache ghcr.io/nikau-herewini/stable-fast-3d:cuda
 ```
 
-The default Python base plus CUDA wheels does not need nvcc because both native
-extensions are CPU builds. To use the pinned CUDA PyTorch base above, additionally
+The published CUDA configuration uses the Python slim base plus CUDA wheels;
+it does not need nvcc because both native extensions are CPU builds. To use the pinned CUDA PyTorch base above, additionally
 pass `--build-arg BASE_IMAGE='pytorch/pytorch:...@sha256:...'` with its full value.
 
 ### AMD ROCm
 
 Use a ROCm-supported Linux host, AMD GPU, and compatible kernel driver. The
+The published ROCm configuration uses the pinned ROCm toolkit base listed above.
 PyTorch 2.5.1 wheels target ROCm 6.2; do not infer support for older Radeon cards
 or every integrated AMD GPU. `/dev/kfd` and `/dev/dri` must exist on the host.
 
 ```sh
-docker build --target api --build-arg BACKEND=rocm \
-  --build-arg BASE_IMAGE=rocm/dev-ubuntu-22.04:6.2.4@sha256:030304ab0a88778b627b2eb2354c419146e105f5ac39ffd9c2438c82ef54b584 \
-  -t stable-fast-3d-api:rocm .
+docker pull ghcr.io/nikau-herewini/stable-fast-3d:rocm
 docker run --rm --init -p 127.0.0.1:8000:8000 \
   --device=/dev/kfd --device=/dev/dri \
   --group-add "$(stat -c '%g' /dev/kfd)" \
   --group-add "$(stat -c '%g' /dev/dri/renderD128)" \
   -e HF_TOKEN -e SF3D_DEVICE=cuda \
-  -v sf3d-model-cache:/cache stable-fast-3d-api:rocm
+  -v sf3d-model-cache:/cache ghcr.io/nikau-herewini/stable-fast-3d:rocm
 ```
 
 Adjust the render-node path and supplementary group IDs to the selected host

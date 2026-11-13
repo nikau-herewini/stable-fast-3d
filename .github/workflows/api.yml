@@ -5,9 +5,12 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -22,33 +25,57 @@ jobs:
       - run: ruff check api_server.py api_backend.py tests
       - run: python -m compileall -q api_server.py api_backend.py sf3d texture_baker uv_unwrapper
 
-  docker-cpu:
-    runs-on: ubuntu-latest
+  docker:
+    name: docker-${{ matrix.backend }}
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - backend: cpu
+            base: python:3.11.11-slim-bookworm@sha256:081075da77b2b55c23c088251026fb69a7b2bf92471e491ff5fd75c192fd38e5
+          - backend: cuda
+            base: python:3.11.11-slim-bookworm@sha256:081075da77b2b55c23c088251026fb69a7b2bf92471e491ff5fd75c192fd38e5
+          - backend: rocm
+            base: rocm/dev-ubuntu-22.04:6.2.4@sha256:030304ab0a88778b627b2eb2354c419146e105f5ac39ffd9c2438c82ef54b584
     steps:
       - uses: actions/checkout@v4
+      - name: Free runner space (remove unused preinstalled SDKs)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h /
       - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+      - name: Log in to GHCR for main-branch publishing
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository }}
+          flavor: latest=false
+          tags: |
+            type=raw,value=${{ matrix.backend }}
+            type=raw,value=sha-${{ github.sha }}-${{ matrix.backend }}
+      - name: Build, smoke-test, and publish only from main
+        uses: docker/build-push-action@v6
         with:
           context: .
-          target: cpu
-          push: false
-          load: true
-          tags: sf3d-api:test
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      - name: Check image imports and CPU texture baking
-        run: |
-          docker run --rm --entrypoint python sf3d-api:test -c '
-          import api_server
-          import torch
-          from sf3d.system import SF3D
-          from sf3d.device import select_device
-          from texture_baker import TextureBaker
-          assert select_device("cpu") == "cpu"
-          baker = TextureBaker()
-          uv = torch.tensor([[0., 0.], [1., 0.], [0., 1.]])
-          faces = torch.tensor([[0, 1, 2]])
-          rast = baker.rasterize(uv, faces, 4)
-          assert rast.shape == (4, 4, 4)
-          assert baker.interpolate(torch.ones((3, 3)), rast, faces).shape == (4, 4, 3)
-          '
+          target: api
+          platforms: linux/amd64
+          build-args: |
+            BACKEND=${{ matrix.backend }}
+            BASE_IMAGE=${{ matrix.base }}
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.backend }}
+          cache-to: type=gha,scope=${{ matrix.backend }},mode=max

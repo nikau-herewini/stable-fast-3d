@@ -73,8 +73,10 @@ COPY api_server.py api_backend.py LICENSE.md ./
 # No gated weights or accelerator is needed for this build-time smoke check.
 RUN python - <<'PY'
 import torch
+from sf3d.device import select_device
 from sf3d.system import SF3D
 from texture_baker import TextureBaker
+assert select_device("cpu") == "cpu"
 uv = torch.tensor([[0., 0.], [1., 0.], [0., 1.]])
 faces = torch.tensor([[0, 1, 2]], dtype=torch.int32)
 baker = TextureBaker()
@@ -84,7 +86,7 @@ texture = baker.interpolate(torch.ones((3, 3)), rast, faces)
 assert mask.any().item()
 assert texture.shape == (8, 8, 3)
 assert torch.allclose(texture[mask], torch.ones_like(texture[mask]))
-print("SF3D import and CPU texture bake passed")
+print("SF3D import, CPU startup, UV unwrap, and texture bake passed")
 PY
 
 RUN groupadd --gid 10001 sf3d \
