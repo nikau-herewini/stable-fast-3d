@@ -1,6 +1,7 @@
 #include <ATen/ATen.h>
 #include <ATen/Context.h>
 #include <ATen/cuda/CUDAContext.h>
+#include <c10/cuda/CUDAGuard.h>
 #include <torch/extension.h>
 
 #include "baker.h"
@@ -65,7 +66,7 @@ namespace texture_baker_cpp
         int x = idx / width;
         int y = idx % width;
 
-        if (x >= width || y >= height)
+        if (x >= height || y >= width)
             return;
 
         float4 barycentric = rast[idx];
@@ -198,8 +199,11 @@ namespace texture_baker_cpp
 #ifdef TIMING
         auto start = std::chrono::high_resolution_clock::now();
 #endif
+        const c10::cuda::CUDAGuard device_guard(uv.device());
+        uv = uv.contiguous();
+        indices = indices.contiguous();
         constexpr int block_size = 16 * 16;
-        int grid_size = bake_resolution * bake_resolution / block_size;
+        int grid_size = (bake_resolution * bake_resolution + block_size - 1) / block_size;
         dim3 block_dims(block_size, 1, 1);
         dim3 grid_dims(grid_size, 1, 1);
 
@@ -209,7 +213,7 @@ namespace texture_baker_cpp
         int height = bake_resolution;
 
         // Step 1: create an empty tensor to store the output.
-        torch::Tensor rast_result = torch::empty({bake_resolution, bake_resolution, 4}, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
+        torch::Tensor rast_result = torch::empty({bake_resolution, bake_resolution, 4}, uv.options().dtype(torch::kFloat32));
 
         auto vertices_cpu = uv.contiguous().cpu();
         auto indices_cpu = indices.contiguous().cpu();
@@ -267,16 +271,20 @@ namespace texture_baker_cpp
 #ifdef TIMING
         auto start = std::chrono::high_resolution_clock::now();
 #endif
+        const c10::cuda::CUDAGuard device_guard(attr.device());
+        attr = attr.contiguous();
+        indices = indices.contiguous();
+        rast = rast.contiguous();
         constexpr int block_size = 16 * 16;
-        int grid_size = rast.size(0) * rast.size(0) / block_size;
+        int grid_size = (rast.size(0) * rast.size(1) + block_size - 1) / block_size;
         dim3 block_dims(block_size, 1, 1);
         dim3 grid_dims(grid_size, 1, 1);
 
         // Step 1: create an empty tensor to store the output.
-        torch::Tensor pos_bake = torch::empty({rast.size(0), rast.size(1), 3}, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
+        torch::Tensor pos_bake = torch::empty({rast.size(0), rast.size(1), 3}, attr.options().dtype(torch::kFloat32));
 
-        int width = rast.size(0);
-        int height = rast.size(1);
+        int width = rast.size(1);
+        int height = rast.size(0);
 
         cudaStream_t cuda_stream = at::cuda::getCurrentCUDAStream();
 

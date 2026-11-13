@@ -140,10 +140,10 @@ class Unwrapper(nn.Module):
             Integer[Tensor, "Nf"]: Atlas index
         """
         return torch.ops.UVUnwrapper.assign_faces_uv_to_atlas_index(
-            vertex_positions.cpu(),
-            triangle_idxs.cpu(),
-            face_uv.view(-1, 2).cpu(),
-            face_index.cpu(),
+            vertex_positions.to(device="cpu", dtype=torch.float32).contiguous(),
+            triangle_idxs.to(device="cpu", dtype=torch.int64).contiguous(),
+            face_uv.reshape(-1, 2).to(device="cpu", dtype=torch.float32).contiguous(),
+            face_index.to(device="cpu", dtype=torch.int64).contiguous(),
         ).to(vertex_positions.device)
 
     def _find_slice_offset_and_scale(
@@ -235,12 +235,8 @@ class Unwrapper(nn.Module):
             # t_nrm_idx is always the same as t_pos_idx
             vn_idx[i] = triangle_idxs[:, i]
 
-        if(torch.backends.mps.is_available()):
-            tangents = torch.zeros_like(vertex_normals).contiguous()
-            tansum = torch.zeros_like(vertex_normals).contiguous()
-        else:
-            tangents = torch.zeros_like(vertex_normals)
-            tansum = torch.zeros_like(vertex_normals)
+        tangents = torch.zeros_like(vertex_normals).contiguous()
+        tansum = torch.zeros_like(vertex_normals).contiguous()
 
         # Compute tangent space for each triangle
         duv1 = tex[1] - tex[0]
@@ -323,7 +319,7 @@ class Unwrapper(nn.Module):
 
         def rotation_matrix_2d(theta):
             c, s = torch.cos(theta), torch.sin(theta)
-            return torch.tensor([[c, -s], [s, c]])
+            return torch.stack([torch.stack([c, -s]), torch.stack([s, c])])
 
         # Now find the rotation
         index_mod = index % 6  # Shouldn't happen. Just for safety

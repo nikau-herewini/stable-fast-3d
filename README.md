@@ -22,6 +22,29 @@ This is the official codebase for **Stable Fast 3D**, a state-of-the-art open-so
 
 Stable Fast 3D is based on [TripoSR](https://github.com/VAST-AI-Research/TripoSR) but introduces several new key techniques. For one, we explicitly optimize our model to produce good meshes without artifacts alongside textures with UV unwrapping. We also delight the color and predict material parameters so the assets can be easily integrated into a game. We achieve all of this while still maintaining the fast inference speeds of TripoSR.
 
+## Image-to-GLB API
+
+This fork provides a private-network HTTP server: upload one image to
+`POST /generate` and download the resulting GLB file. The API has **no
+authentication**; keep it on a trusted private network.
+
+The default deployment uses prebuilt Linux amd64 images at
+`ghcr.io/nikau-herewini/stable-fast-3d`, with moving tags `cpu`, `cuda`, and
+`rocm`, or commit-specific tags `sha-<full40commit>-<backend>`. Tags can change
+on rebuild; pin an image `@sha256:<digest>` for immutable deployment. There is no
+`latest` alias. CI publishes only on pushes to `main`, after tests and per-backend
+weight-free image smoke checks; pull requests do not publish.
+
+Public images need no registry login. Model weights and Hugging Face tokens
+remain external and are supplied at runtime.
+
+See the [API and Docker deployment guide](docs/api.md) for `docker pull`/`run`
+commands, request limits, and optional source builds. Prior CI
+validated the CPU image; the new GPU build matrix does not verify inference on
+GPU hardware. Full model inference remains unverified.
+
+The CLI and optional Gradio app remain available.
+
 ## Getting Started
 
 ### Installation
