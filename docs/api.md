@@ -139,11 +139,10 @@ PyTorch and torchvision; the dependency files pin the application's direct
 requirements. This is **not a complete dependency lock**: transitive Python
 packages, apt packages, and downloaded model revisions are not all pinned.
 
-`requirements.txt` remains unchanged for the CLI. Do not install it into the API
-image: its non-macOS `rembg[gpu]` extra pulls in NVIDIA ONNX Runtime.
-`requirements-inference.txt` preserves the legacy model dependency versions,
-including NumPy 1.26.4, but uses plain `rembg==2.0.57` and CPU
-`onnxruntime==1.20.1`. `requirements-api.txt` supplies the HTTP dependencies.
+`requirements.txt` supplies the model runtime dependencies, including NumPy
+1.26.4, `rembg==2.0.57`, and CPU `onnxruntime==1.20.1` for background removal.
+`requirements-api.txt` supplies the HTTP dependencies. The Dockerfile installs
+both; no demo or standalone CLI dependencies are required.
 
 The Dockerfile installs torch **first**, then runtime requirements, then
 `./texture_baker/` and `./uv_unwrapper/` with **`--no-build-isolation`**. It
@@ -191,13 +190,10 @@ backend absent from the installed PyTorch build.
 
 ## GPU deployment and validation limits
 
-The CPU image build and weight-free startup, UV unwrapping, and texture-baker
-checks passed in prior CI. The new `docker` matrix builds `cpu`, `cuda`, and
-`rocm` images and runs weight-free smoke checks. Every backend also runs
-`select_device("cpu")` in the Dockerfile build-time check. The matrix
-configuration is not evidence that those new builds have passed. **GPU hardware inference and full model inference
-remain unverified.** No local Docker build or GPU inference was run for these
-documentation changes.
+The CI matrix builds `cpu`, `cuda`, and `rocm` images and runs weight-free
+startup, UV unwrapping, and texture-baker checks. Every backend runs
+`select_device("cpu")` during the Docker build. These checks do not verify
+GPU execution, full-model inference, or memory requirements.
 
 These are deployment configurations, not claims of support for arbitrary NVIDIA
 or AMD GPUs. Check the selected PyTorch release's hardware and driver
@@ -251,7 +247,7 @@ pass `--build-arg BASE_IMAGE='pytorch/pytorch:...@sha256:...'` with its full val
 
 ### AMD ROCm
 
-Use a ROCm-supported Linux host, AMD GPU, and compatible kernel driver. The
+Use a ROCm-supported Linux host, AMD GPU, and compatible kernel driver.
 The published ROCm configuration uses the pinned ROCm toolkit base listed above.
 PyTorch 2.5.1 wheels target ROCm 6.2; do not infer support for older Radeon cards
 or every integrated AMD GPU. `/dev/kfd` and `/dev/dri` must exist on the host.
@@ -269,5 +265,4 @@ docker run --rm --init -p 127.0.0.1:8000:8000 \
 Adjust the render-node path and supplementary group IDs to the selected host
 GPU. Do not solve permissions by running the application privileged or as root.
 
-The API deployment scope is **CPU, NVIDIA CUDA, and AMD ROCm only**. Existing
-Mac source is retained, but MPS is outside the API support scope.
+The API deployment scope is **CPU, NVIDIA CUDA, and AMD ROCm only**.

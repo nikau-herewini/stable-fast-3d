@@ -1,128 +1,58 @@
-# SF3D: Stable Fast 3D Mesh Reconstruction with UV-unwrapping and Illumination Disentanglement
+# Stable Fast 3D API
 
-<a href="https://arxiv.org/abs/2408.00653"><img src="https://img.shields.io/badge/Arxiv-2408.00653-B31B1B.svg"></a> <a href="https://huggingface.co/stabilityai/stable-fast-3d"><img src="https://img.shields.io/badge/%F0%9F%A4%97%20Model_Card-Huggingface-orange"></a> <a href="https://huggingface.co/spaces/stabilityai/stable-fast-3d"><img src="https://img.shields.io/badge/%F0%9F%A4%97%20Gradio%20Demo-Huggingface-orange"></a>
+An API-only fork of [Stable Fast 3D](https://github.com/Stability-AI/stable-fast-3d)
+that reconstructs a textured GLB model from one image.
 
-<div align="center">
-  <img src="demo_files/teaser.gif" alt="Teaser">
-</div>
+## API
 
-<br>
+- `POST /generate`: upload one PNG/JPEG file in the multipart field `image`;
+  download the resulting GLB.
+- `GET /healthz`: HTTP health.
+- `GET /readyz`: model readiness and selected device.
 
-This is the official codebase for **Stable Fast 3D**, a state-of-the-art open-source model for **fast** feedforward 3D mesh reconstruction from a single image.
+The API has **no authentication**. Keep it on a trusted private network.
+Generation settings are fixed; only one request runs at a time. Busy requests
+return `503`. Files are limited to 10 MiB and 16 million pixels.
 
-<br>
+## Docker deployment
 
-<p align="center">
-    <img width="450" src="demo_files/comp.gif"/>
-</p>
+Use Linux amd64 images from `ghcr.io/nikau-herewini/stable-fast-3d`:
 
-<p align="center">
-    <img width="450" src="demo_files/scatterplot.jpg"/>
-</p>
+| Tag | Inference backend |
+| --- | --- |
+| `cpu` | CPU |
+| `cuda` | NVIDIA CUDA |
+| `rocm` | AMD ROCm |
 
-Stable Fast 3D is based on [TripoSR](https://github.com/VAST-AI-Research/TripoSR) but introduces several new key techniques. For one, we explicitly optimize our model to produce good meshes without artifacts alongside textures with UV unwrapping. We also delight the color and predict material parameters so the assets can be easily integrated into a game. We achieve all of this while still maintaining the fast inference speeds of TripoSR.
+CI builds and smoke-tests images on pull requests and publishes on pushes to
+`main`. Commit-specific tags use `sha-<full40commit>-<backend>`. Pin an image
+`@sha256:<digest>` for immutable deployment; there is no `latest` alias.
 
-## Image-to-GLB API
+Model weights and Hugging Face tokens stay outside the images. Downloaded models
+use a persistent cache. See the [deployment guide](docs/api.md) for access setup,
+`docker pull`/`docker run` commands, GPU requirements, and optional source builds.
 
-This fork provides a private-network HTTP server: upload one image to
-`POST /generate` and download the resulting GLB file. The API has **no
-authentication**; keep it on a trusted private network.
+Image smoke tests do not verify full-model inference or GPU hardware support.
 
-The default deployment uses prebuilt Linux amd64 images at
-`ghcr.io/nikau-herewini/stable-fast-3d`, with moving tags `cpu`, `cuda`, and
-`rocm`, or commit-specific tags `sha-<full40commit>-<backend>`. Tags can change
-on rebuild; pin an image `@sha256:<digest>` for immutable deployment. There is no
-`latest` alias. CI publishes only on pushes to `main`, after tests and per-backend
-weight-free image smoke checks; pull requests do not publish.
-
-Public images need no registry login. Model weights and Hugging Face tokens
-remain external and are supplied at runtime.
-
-See the [API and Docker deployment guide](docs/api.md) for `docker pull`/`run`
-commands, request limits, and optional source builds. Prior CI
-validated the CPU image; the new GPU build matrix does not verify inference on
-GPU hardware. Full model inference remains unverified.
-
-The CLI and optional Gradio app remain available.
-
-## Getting Started
-
-### Installation
-
-Ensure your environment is:
-- Python >= 3.8
-- Optional: CUDA or MPS has to be available
-- For Windows **(experimental)**: Visual Studio 2022
-- Has PyTorch installed according to your platform: https://pytorch.org/get-started/locally/ [Make sure the Pytorch CUDA version matches your system's.]
-- Update setuptools by `pip install -U setuptools==69.5.1`
-- Install wheel by `pip install wheel`
-
-Then, install the remaining requirements with `pip install -r requirements.txt`.
-For the gradio demo, an additional `pip install -r requirements-demo.txt` is required.
-
-### Requesting Access and Login
-
-Our model is gated at [Hugging Face](https://huggingface.co):
-
-1. Log in to Hugging Face and request access [here](https://huggingface.co/stabilityai/stable-fast-3d).
-2. Create an access token with read permissions [here](https://huggingface.co/settings/tokens).
-3. Run `huggingface-cli login` in the environment and enter the token.
-
-### Support for MPS (for Mac Silicon) **(experimental)**
-
-Stable Fast 3D can also run on Macs via the MPS backend, with the texture baker using custom metal kernels similar to the corresponding CUDA kernels.
-
-Note that support is **experimental** and not guaranteed to give the same performance and/or quality as the CUDA backend.
-
-You will need to install OpenMP runtime to enable clang support for `-fopenmp`. Follow the tutorial here https://mac.r-project.org/openmp/ 
-
-MPS backend support was tested on M1 max 64GB with the latest PyTorch nightly release. We recommend you install the latest PyTorch (2.4.0 as of writing) and/or the nightly version to avoid any issues that my arise with older PyTorch versions.
-
-You also need to run the code with `PYTORCH_ENABLE_MPS_FALLBACK=1`.
-
-MPS currently consumes more memory compared to the CUDA PyTorch backend. We recommend running the CPU version if your system has less than 32GB of unified memory.
-
-### Windows Support **(experimental)**
-
-To run Stable Fast 3D on Windows, you must install Visual Studio (currently tested on VS 2022) and the appropriate PyTorch and CUDA versions.
-Then, follow the installation steps as mentioned above.
-
-Note that Windows support is **experimental** and not guaranteed to give the same performance and/or quality as Linux.
-
-### CPU Support
-
-CPU backend will automatically be used if no GPU is detected in your system.
-
-If you have a GPU but are facing issues and want to use the CPU backend instead, set the environment variable `SF3D_USE_CPU=1` to force the CPU backend.
-
-### Manual Inference
+## Development checks
 
 ```sh
-python run.py demo_files/examples/chair1.png --output-dir output/
-```
-This will save the reconstructed 3D model as a GLB file to `output/`. You can also specify more than one image path separated by spaces. The default options takes about **6GB VRAM** for a single image input.
-
-You may also use `--texture-resolution` to specify the resolution in pixels of the output texture and `--remesh_option` to specify the remeshing operation (None, Triangle, Quad).
-
-For detailed usage of this script, use `python run.py --help`.
-
-### Local Gradio App
-
-```sh
-python gradio_app.py
+python -m pip install -r requirements-test.txt
+python -m pytest -q
+ruff check api_server.py api_backend.py tests
 ```
 
-## Remesher Options:
+These tests exercise the API and backend control flow without downloading model
+weights. Docker builds also check native CPU geometry and texture operations.
 
-  -`none`: mesh unchanged after generation. No CPU overhead.
+## Model and license
 
-  -`triangle`: verticies and edges are rearranged to form a triangle topography. Implementation is from: *"[A Remeshing Approach to Multiresolution Modeling](https://github.com/sgsellan/botsch-kobbelt-remesher-libigl)" by M. Botsch and L. Kobbelt*. CPU overhead expected.
+Model access is gated at
+[Hugging Face](https://huggingface.co/stabilityai/stable-fast-3d).
+See [LICENSE.md](LICENSE.md) for the model and code license.
 
-  -`quad`: verticies and edges are rearanged in quadrilateral topography with a proper quad flow. The quad mesh is split into triangles for export with GLB. Implementation is from *"[Instant Field-Aligned Meshes](https://github.com/wjakob/instant-meshes)" from Jakob et al.*. CPU overhead expected.
+[Paper](https://arxiv.org/abs/2408.00653):
 
-Additionally the target vertex count can be specified. This is not a hard constraint but a rough vertex count the method aims to create. This target is ignored if the remesher is set to `none`.
-
-## Citation
 ```BibTeX
 @article{sf3d2024,
   title={SF3D: Stable Fast 3D Mesh Reconstruction with UV-unwrapping and Illumination Disentanglement},
